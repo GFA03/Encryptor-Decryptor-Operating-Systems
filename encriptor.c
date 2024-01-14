@@ -12,12 +12,36 @@
 
 #define BUFFER_SIZE 4096
 
+int isFileEmpty(int fd)
+{
+    // Move the file pointer to the end of the file
+    if (lseek(fd, 0, SEEK_END) == 0)
+    {
+        // If the file pointer is at the beginning, the file is empty
+        return 1; // True (file is empty)
+    }
+    else
+    {
+        // If the file pointer is not at the beginning, the file is not empty
+        lseek(fd, 0, SEEK_SET); // Reset the file pointer to the beginning
+        return 0; // False (file is not empty)
+    }
+}
+
 void openFile(char *fileName, int flags, mode_t mode, int *fd)
 {
     *fd = open(fileName, flags, mode);
     if (*fd < 0)
     {
         perror("Error opening the file");
+        exit(1);
+    }
+
+    // Check if the file is empty
+    if (isFileEmpty(*fd))
+    {
+        fprintf(stderr, "Error: The file is empty.\n");
+        close(*fd);
         exit(1);
     }
 }
