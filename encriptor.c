@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 #define BUFFER_SIZE 4096
 
@@ -30,26 +31,45 @@ void createOutputFile(char *fileName, int *fd)
     }
 }
 
-ssize_t readFromFile(int* fd, char *buffer, int size)
+
+void *mapFileIntoMemory(int fd, off_t *fileSize)
 {
-    ssize_t bytesRead = read(*fd, buffer, size);
-    if (bytesRead < 0)
+    struct stat fileStat;
+    if (fstat(fd, &fileStat) < 0)
     {
-        perror("Error reading from the source file");
+        perror("Error getting file size");
         exit(1);
     }
-    return bytesRead;
+
+    *fileSize = fileStat.st_size;
+
+    void *mappedFile = mmap(NULL, *fileSize, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (mappedFile == MAP_FAILED)
+    {
+        perror("Error mapping file into memory");
+        exit(1);
+    }
+
+    return mappedFile;
 }
 
-ssize_t writeToFile(int* fd, char *buffer, int size)
+void processMappedFile(void *mappedFile, off_t fileSize)
 {
-    ssize_t bytesWritten = write(*fd, buffer, size);
-    if (bytesWritten < 0)
+    char *fileContent = (char *)mappedFile;
+
+    for (off_t i = 0; i < fileSize; ++i)
     {
-        perror("Error writing to the destination file");
+        putchar(fileContent[i]);
+    }
+}
+
+void unmapFileFromMemory(void *mappedFile, off_t fileSize)
+{
+    if (munmap(mappedFile, fileSize) < 0)
+    {
+        perror("Error unmapping file from memory");
         exit(1);
     }
-    return bytesWritten;
 }
 
 void closeFiles(int inputFd, int outputFd)
@@ -89,8 +109,9 @@ int main(int argc, char** argv)
     char *outputFile = "output.txt";
     char *permutationsFile;
     int inputFd, outputFd;
-    char buffer[BUFFER_SIZE];
+    char *line = NULL;
     ssize_t bytesRead, bytesWritten;
+    off_t fileSize;
 
     if(encryptFlag == 0)
     {
@@ -101,57 +122,15 @@ int main(int argc, char** argv)
     {
         openFile(inputFile, O_RDONLY, S_IRUSR, &inputFd);
         createOutputFile(outputFile, &outputFd);
-        bytesRead = readFromFile(&inputFd, buffer, sizeof(buffer));
-        while(bytesRead > 0)
-        {
-            bytesWritten = writeToFile(&outputFd, buffer, bytesRead);
-            bytesRead = readFromFile(&inputFd, buffer, sizeof(buffer));
-        }
-        if(bytesWritten < 0)
-        {
-            perror("Error writing to the destination file");
-            closeFiles(inputFd, outputFd);
-            return 1;
-        }
-        if(bytesRead == 0)
-        {
-            closeFiles(inputFd, outputFd);
-        }
+        
+        void *mappedFile = mapFileIntoMemory(inputFd, &fileSize);
+
+        processMappedFile(mappedFile, fileSize);
+
+        unmapFileFromMemory(mappedFile, fileSize);
+
+        closeFiles(inputFd, outputFd);
     }
-
-    // struct stat sb;
-    // if (stat(inputFile, &sb))
-    // {
-    //     perror(inputFile);
-    //     return errno;
-    // }
-
-
-    // ssize_t bytesRead, bytesWritten;
-
-    // while ((bytesRead = read(fd, buffer, sizeof(buffer))) > 0)
-    // {
-    //     bytesWritten = write(new, buffer, bytesRead);
-
-    //     if (bytesWritten < 0)
-    //     {
-    //         perror("Error writing to the destination file");
-    //         close(fd);
-    //         close(new);
-    //         return 1;
-    //     }
-    // }
-
-    // if (bytesRead < 0)
-    // {
-    //     perror("Error reading from the source file");
-    //     close(fd);
-    //     close(new);
-    //     return 1;
-    // }
-
-    // close(fd);
-    // close(new);
 
     return 0;
 }
