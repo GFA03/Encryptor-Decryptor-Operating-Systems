@@ -22,13 +22,22 @@ void openFile(char *fileName, int flags, mode_t mode, int *fd)
     }
 }
 
-void createOutputFile(char *fileName, int *fd)
+// Creating output files for encrypted words and permutations
+void createOutputFiles(char *fileName1, char *fileName2, int *fd1, int *fd2)
 {
-    *fd = open(fileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    if (*fd < 0)
+    *fd1 = open(fileName1, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (*fd1 < 0)
     {
         perror("Error opening the destination file");
-        close(*fd);
+        close(*fd1);
+        exit(1);
+    }
+
+    *fd2 = open(fileName2, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (*fd2 < 0)
+    {
+        perror("Error opening the destination file");
+        close(*fd2);
         exit(1);
     }
 }
@@ -55,7 +64,7 @@ void *mapFileIntoMemory(int fd, off_t *fileSize)
     return mappedFile;
 }
 
-void permuteWord(char *word)
+void permuteWord(char *word, int outputFd, int permutationFd)
 {
     // Seed for random number generation
     srand(time(NULL));
@@ -95,19 +104,37 @@ void permuteWord(char *word)
     }
 
     // Print the permuted word and the permutation array
-    printf("Original Word: %s\n", word);
-    printf("Permutation:   ");
-    for (size_t i = 0; i < length; i++)
+    // printf("Original Word: %s\n", word);
+    // printf("Permutation:   ");
+    // for (size_t i = 0; i < length; i++)
+    // {
+    //     printf("%d ", permutation[i]);
+    // }
+    // printf("\n");
+
+    // Write the permuted word to the output file
+    ssize_t bytesWritten = write(outputFd, word, length);
+    if (bytesWritten < 0)
     {
-        printf("%d ", permutation[i]);
+        perror("Error writing to the destination file");
+        exit(1);
     }
-    printf("\n");
+    write(outputFd, "\n", 1);
+
+    for(size_t i = 0; i < length; i++)
+    {
+        char temp[100];
+        sprintf(temp, "%d ", permutation[i]);
+        write(permutationFd, temp, strlen(temp));
+    }
+
+    write(permutationFd, "\n", 1);
 
     // Free the allocated memory for the permutation array
     free(permutation);
 }
 
-void processLine(char *line)
+void processLine(char *line, int outputFd, int permutationFd)
 {
     // Tokenize the line into words
     char *word = strtok(line, " \t\n"); // You might need to expand the delimiter list
@@ -125,7 +152,7 @@ void processLine(char *line)
         else if (pid == 0) // Child process
         {
             // Permute the word
-            permuteWord(word);
+            permuteWord(word, outputFd, permutationFd);
             exit(0);
         }
         else // Parent process
@@ -139,7 +166,7 @@ void processLine(char *line)
     }
 }
 
-void processMappedFile(void *mappedFile, off_t fileSize)
+void processMappedFile(void *mappedFile, off_t fileSize, int outputFd, int permutationFd)
 {
     // Cast the void pointer to the appropriate data type
     char *fileContent = (char *)mappedFile;
@@ -171,7 +198,7 @@ void processMappedFile(void *mappedFile, off_t fileSize)
 
 
         // Process the line
-        processLine(line);
+        processLine(line, outputFd, permutationFd);
 
         // Free the allocated memory for the line
         free(line);
@@ -225,8 +252,8 @@ int main(int argc, char** argv)
 
     char *inputFile = argv[1];
     char *outputFile = "output.txt";
-    char *permutationsFile;
-    int inputFd, outputFd;
+    char *permutationsFile = "permutations.txt";
+    int inputFd, outputFd, permutationFd;
     char *line = NULL;
     ssize_t bytesRead, bytesWritten;
     off_t fileSize;
@@ -239,11 +266,11 @@ int main(int argc, char** argv)
     else
     {
         openFile(inputFile, O_RDONLY, S_IRUSR, &inputFd);
-        createOutputFile(outputFile, &outputFd);
+        createOutputFiles(outputFile, permutationsFile, &outputFd, &permutationFd);
         
         void *mappedFile = mapFileIntoMemory(inputFd, &fileSize);
 
-        processMappedFile(mappedFile, fileSize);
+        processMappedFile(mappedFile, fileSize, outputFd, permutationFd);
 
         unmapFileFromMemory(mappedFile, fileSize);
 
@@ -252,10 +279,3 @@ int main(int argc, char** argv)
 
     return 0;
 }
-
-// int main(int argc, char** argv)
-// {
-//     char word[] = "lopata cu tractor";
-//     permuteWord(word);
-//     return 0;
-// }
