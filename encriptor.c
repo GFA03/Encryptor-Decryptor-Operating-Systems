@@ -82,6 +82,9 @@ void *mapFileIntoMemory(int fd, off_t *fileSize)
 
 void permuteWord(char *word, int outputFd, int permutationFd)
 {
+    
+    srand(getpid() + time(NULL));
+
     // Get the length of the word
     size_t length = strlen(word);
 
@@ -322,8 +325,6 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    // Seed for random number generation
-    srand(time(NULL));
 
     char *inputFile = argv[1];
 
