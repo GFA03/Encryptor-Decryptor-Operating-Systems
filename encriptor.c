@@ -37,7 +37,6 @@ void openFile(char *fileName, int flags, mode_t mode, int *fd)
         exit(1);
     }
 
-    // Check if the file is empty
     if (isFileEmpty(*fd))
     {
         fprintf(stderr, "Error: The file is empty.\n");
@@ -46,7 +45,6 @@ void openFile(char *fileName, int flags, mode_t mode, int *fd)
     }
 }
 
-// Creating output files
 void createOutputFile(char *fileName, int *fd)
 {
     *fd = open(fileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
@@ -60,6 +58,7 @@ void createOutputFile(char *fileName, int *fd)
 
 void *mapFileIntoMemory(int fd, off_t *fileSize)
 {
+    // Get the size of the file
     struct stat fileStat;
     if (fstat(fd, &fileStat) < 0)
     {
@@ -69,6 +68,7 @@ void *mapFileIntoMemory(int fd, off_t *fileSize)
 
     *fileSize = fileStat.st_size;
 
+    // Map the file into memory
     void *mappedFile = mmap(NULL, *fileSize, PROT_READ, MAP_PRIVATE, fd, 0);
     if (mappedFile == MAP_FAILED)
     {
@@ -76,14 +76,12 @@ void *mapFileIntoMemory(int fd, off_t *fileSize)
         exit(1);
     }
 
+    // Return the pointer to the mapped file
     return mappedFile;
 }
 
 void permuteWord(char *word, int outputFd, int permutationFd)
 {
-    // Seed for random number generation
-    srand(time(NULL));
-
     // Get the length of the word
     size_t length = strlen(word);
 
@@ -127,10 +125,11 @@ void permuteWord(char *word, int outputFd, int permutationFd)
     }
     write(outputFd, "\n", 1);
 
+    // Write the permutation to the permutation file
     for(size_t i = 0; i < length; i++)
     {
         char temp[100];
-        sprintf(temp, "%d", permutation[i]);
+        sprintf(temp, "%d ", permutation[i]);
         write(permutationFd, temp, strlen(temp));
     }
 
@@ -143,7 +142,7 @@ void permuteWord(char *word, int outputFd, int permutationFd)
 void processLine(char *line, int outputFd, int permutationFd)
 {
     // Tokenize the line into words
-    char *word = strtok(line, " \t\n"); // You might need to expand the delimiter list
+    char *word = strtok(line, " \t\n");
 
     while (word != NULL)
     {
@@ -202,7 +201,6 @@ void processMappedFile(void *mappedFile, off_t fileSize, int outputFd, int permu
         strncpy(line, fileContent + currentPosition, lineLength);
         line[lineLength] = '\0'; // Null-terminate the line
 
-
         // Process the line
         processLine(line, outputFd, permutationFd);
 
@@ -249,11 +247,26 @@ void processDecryption(void *mappedFile, off_t fileSize, void *mappedPermutation
 
         lineCopy = strcpy(lineCopy, line);
 
+        char *permutationContentCopy = strdup(permutationContent); // Create a copy
+        if (permutationContentCopy == NULL)
+        {
+            perror("Error allocating memory for permutationContentCopy");
+            exit(1);
+        }
+
+        char *permutationIndex;
+
+        if (currentPosition == 0)
+            permutationIndex = strtok(permutationContentCopy, " \t\n");
+
         // Process the line
         for(int i = 0; i < strlen(line); i++)
         {
-            int index = permutationContent[i + currentPosition] - '0';
+            if(permutationIndex == NULL)
+                break;
+            int index = atoi(permutationIndex);
             line[index] = lineCopy[i];
+            permutationIndex = strtok(NULL, " \t\n");
         }
 
         // Write the decrypted word to the output file
@@ -308,6 +321,9 @@ int main(int argc, char** argv)
         fprintf(stderr, "There are two types of usage!\n1. Encryptor:\t Usage: %s <input_file>\n2. Decryptor:\t Usage: %s <encrypted_words_file> <permutations_file>\n", argv[0], argv[0]);
         return 1;
     }
+
+    // Seed for random number generation
+    srand(time(NULL));
 
     char *inputFile = argv[1];
 
