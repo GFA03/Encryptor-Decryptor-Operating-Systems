@@ -46,26 +46,17 @@ void openFile(char *fileName, int flags, mode_t mode, int *fd)
     }
 }
 
-// Creating output files for encrypted words and permutations
-void createOutputFiles(char *fileName1, char *fileName2, int *fd1, int *fd2)
+// Creating output files
+void createOutputFile(char *fileName, int *fd)
 {
-    *fd1 = open(fileName1, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    if (*fd1 < 0)
+    *fd = open(fileName, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (*fd < 0)
     {
         perror("Error opening the destination file");
-        close(*fd1);
-        exit(1);
-    }
-
-    *fd2 = open(fileName2, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
-    if (*fd2 < 0)
-    {
-        perror("Error opening the destination file");
-        close(*fd2);
+        close(*fd);
         exit(1);
     }
 }
-
 
 void *mapFileIntoMemory(int fd, off_t *fileSize)
 {
@@ -127,15 +118,6 @@ void permuteWord(char *word, int outputFd, int permutationFd)
         permutation[j] = tempIndex;
     }
 
-    // Print the permuted word and the permutation array
-    // printf("Original Word: %s\n", word);
-    // printf("Permutation:   ");
-    // for (size_t i = 0; i < length; i++)
-    // {
-    //     printf("%d ", permutation[i]);
-    // }
-    // printf("\n");
-
     // Write the permuted word to the output file
     ssize_t bytesWritten = write(outputFd, word, length);
     if (bytesWritten < 0)
@@ -148,7 +130,7 @@ void permuteWord(char *word, int outputFd, int permutationFd)
     for(size_t i = 0; i < length; i++)
     {
         char temp[100];
-        sprintf(temp, "%d ", permutation[i]);
+        sprintf(temp, "%d", permutation[i]);
         write(permutationFd, temp, strlen(temp));
     }
 
@@ -232,6 +214,65 @@ void processMappedFile(void *mappedFile, off_t fileSize, int outputFd, int permu
     }
 }
 
+void processDecryption(void *mappedFile, off_t fileSize, void *mappedPermutationFile, off_t permutationSize, int outputFd)
+{
+    // Cast the void pointer to the appropriate data type
+    char *fileContent = (char *)mappedFile;
+    char *permutationContent = (char *)mappedPermutationFile;
+
+    // Process the file content line by line
+    off_t currentPosition = 0;
+    while (currentPosition < fileSize)
+    {
+        // Find the end of the current line
+        off_t lineEnd = currentPosition;
+        while (lineEnd < fileSize && fileContent[lineEnd] != '\n')
+        {
+            lineEnd++;
+        }
+
+        // Calculate the length of the current line
+        off_t lineLength = lineEnd - currentPosition;
+
+        // Allocate memory for the line and copy it
+        char *line = malloc(lineLength + 1); // +1 for null terminator
+        if (line == NULL)
+        {
+            perror("Error allocating memory for line");
+            exit(1);
+        }
+
+        strncpy(line, fileContent + currentPosition, lineLength);
+        line[lineLength] = '\0'; // Null-terminate the line
+
+        char *lineCopy = malloc(lineLength + 1);
+
+        lineCopy = strcpy(lineCopy, line);
+
+        // Process the line
+        for(int i = 0; i < strlen(line); i++)
+        {
+            int index = permutationContent[i + currentPosition] - '0';
+            line[index] = lineCopy[i];
+        }
+
+        // Write the decrypted word to the output file
+        ssize_t bytesWritten = write(outputFd, line, lineLength);
+        if (bytesWritten < 0)
+        {
+            perror("Error writing to the destination file");
+            exit(1);
+        }
+        write(outputFd, "\n", 1);
+
+        // Free the allocated memory for the line
+        free(line);
+
+        // Move to the next line
+        currentPosition = lineEnd + 1;
+    }
+}
+
 void unmapFileFromMemory(void *mappedFile, off_t fileSize)
 {
     if (munmap(mappedFile, fileSize) < 0)
@@ -241,15 +282,9 @@ void unmapFileFromMemory(void *mappedFile, off_t fileSize)
     }
 }
 
-void closeFiles(int inputFd, int outputFd)
+void closeFile(int fd)
 {
-    if (close(inputFd) < 0)
-    {
-        perror("Error closing the file");
-        exit(1);
-    }
-
-    if (close(outputFd) < 0)
+    if (close(fd) < 0)
     {
         perror("Error closing the file");
         exit(1);
@@ -275,22 +310,40 @@ int main(int argc, char** argv)
     }
 
     char *inputFile = argv[1];
+
+    // The input file cannot be called output.txt
     char *outputFile = "output.txt";
     char *permutationsFile = "permutations.txt";
     int inputFd, outputFd, permutationFd;
     char *line = NULL;
     ssize_t bytesRead, bytesWritten;
-    off_t fileSize;
+    off_t fileSize, permutationSize;
 
     if(encryptFlag == 0)
     {
         permutationsFile = argv[2];
+        openFile(inputFile, O_RDONLY, S_IRUSR, &inputFd);
+        openFile(permutationsFile, O_RDONLY, S_IRUSR, &permutationFd);
+        createOutputFile(outputFile, &outputFd);
+
+        void *mappedFile = mapFileIntoMemory(inputFd, &fileSize);
+        void *mappedPermutationFile = mapFileIntoMemory(permutationFd, &permutationSize);
+
+        processDecryption(mappedFile, fileSize, mappedPermutationFile, permutationSize, outputFd);
+
+        unmapFileFromMemory(mappedFile, fileSize);
+        unmapFileFromMemory(mappedPermutationFile, permutationSize);
+
+        closeFile(inputFd);
+        closeFile(permutationFd);
+        closeFile(outputFd);
         return 0;
     }
     else
     {
         openFile(inputFile, O_RDONLY, S_IRUSR, &inputFd);
-        createOutputFiles(outputFile, permutationsFile, &outputFd, &permutationFd);
+        createOutputFile(outputFile, &outputFd);
+        createOutputFile(permutationsFile, &permutationFd);
         
         void *mappedFile = mapFileIntoMemory(inputFd, &fileSize);
 
@@ -298,7 +351,9 @@ int main(int argc, char** argv)
 
         unmapFileFromMemory(mappedFile, fileSize);
 
-        closeFiles(inputFd, outputFd);
+        closeFile(inputFd);
+        closeFile(outputFd);
+        closeFile(permutationFd);
     }
 
     return 0;
