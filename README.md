@@ -1,4 +1,4 @@
-# Encryptor/Decryptor Project
+# Encrypter/Decrypter Project
 
 This project is a simple encryption and decryption tool designed to process text files. It utilizes a permutation-based approach to provide a reversible transformation of the input text.
 
